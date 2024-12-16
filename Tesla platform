@@ -1,0 +1,175 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Microsoft.EntityFrameworkCore;
+
+namespace TeslaRentalPlatform
+{
+    public class TeslaRentalContext : DbContext
+    {
+        public DbSet<TeslaCar> TeslaCars { get; set; }
+        public DbSet<Client> Clients { get; set; }
+        public DbSet<Rental> Rentals { get; set; }
+
+        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+        {
+            optionsBuilder.UseSqlite("Data Source=TeslaRental.db");
+        }
+    }
+
+    public class TeslaCar
+    {
+        public int Id { get; set; }
+        public string Model { get; set; }
+        public decimal HourlyRate { get; set; }
+        public decimal PerKmRate { get; set; }
+    }
+
+    public class Client
+    {
+        public int Id { get; set; }
+        public string FullName { get; set; }
+        public string Email { get; set; }
+    }
+
+    public class Rental
+    {
+        public int Id { get; set; }
+        public int ClientId { get; set; }
+        public int TeslaCarId { get; set; }
+        public DateTime StartTime { get; set; }
+        public DateTime? EndTime { get; set; }
+        public decimal? DistanceKm { get; set; }
+        public decimal? TotalCost { get; set; }
+
+        public Client Client { get; set; }
+        public TeslaCar TeslaCar { get; set; }
+    }
+
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            using (var db = new TeslaRentalContext())
+            {
+                // Ensure database is created
+                db.Database.EnsureCreated();
+
+                // Seed data if database is empty
+                if (!db.TeslaCars.Any())
+                {
+                    db.TeslaCars.AddRange(
+                        new TeslaCar { Model = "Model 3", HourlyRate = 20, PerKmRate = 0.5m },
+                        new TeslaCar { Model = "Model Y", HourlyRate = 25, PerKmRate = 0.6m },
+                        new TeslaCar { Model = "Model S", HourlyRate = 30, PerKmRate = 0.7m }
+                    );
+                    db.SaveChanges();
+                }
+
+                // Main Menu
+                while (true)
+                {
+                    Console.WriteLine("Tesla Rental Platform");
+                    Console.WriteLine("1. Register Client");
+                    Console.WriteLine("2. List Tesla Cars");
+                    Console.WriteLine("3. Rent a Tesla");
+                    Console.WriteLine("4. Complete Rental and Calculate Payment");
+                    Console.WriteLine("0. Exit");
+
+                    var choice = Console.ReadLine();
+                    switch (choice)
+                    {
+                        case "1":
+                            RegisterClient(db);
+                            break;
+                        case "2":
+                            ListTeslaCars(db);
+                            break;
+                        case "3":
+                            RentTesla(db);
+                            break;
+                        case "4":
+                            CompleteRental(db);
+                            break;
+                        case "0":
+                            return;
+                        default:
+                            Console.WriteLine("Invalid choice.");
+                            break;
+                    }
+                }
+            }
+        }
+
+        static void RegisterClient(TeslaRentalContext db)
+        {
+            Console.WriteLine("Enter Full Name:");
+            var fullName = Console.ReadLine();
+
+            Console.WriteLine("Enter Email:");
+            var email = Console.ReadLine();
+
+            db.Clients.Add(new Client { FullName = fullName, Email = email });
+            db.SaveChanges();
+
+            Console.WriteLine("Client registered successfully.");
+        }
+
+        static void ListTeslaCars(TeslaRentalContext db)
+        {
+            var cars = db.TeslaCars.ToList();
+            Console.WriteLine("Available Tesla Cars:");
+            foreach (var car in cars)
+            {
+                Console.WriteLine($"ID: {car.Id}, Model: {car.Model}, Hourly Rate: {car.HourlyRate} EUR/h, Per Km Rate: {car.PerKmRate} EUR/km");
+            }
+        }
+
+        static void RentTesla(TeslaRentalContext db)
+        {
+            Console.WriteLine("Enter Client ID:");
+            var clientId = int.Parse(Console.ReadLine());
+
+            Console.WriteLine("Enter Tesla Car ID:");
+            var carId = int.Parse(Console.ReadLine());
+
+            var rental = new Rental
+            {
+                ClientId = clientId,
+                TeslaCarId = carId,
+                StartTime = DateTime.Now
+            };
+
+            db.Rentals.Add(rental);
+            db.SaveChanges();
+
+            Console.WriteLine("Rental started successfully.");
+        }
+
+        static void CompleteRental(TeslaRentalContext db)
+        {
+            Console.WriteLine("Enter Rental ID:");
+            var rentalId = int.Parse(Console.ReadLine());
+
+            var rental = db.Rentals.Include(r => r.TeslaCar).FirstOrDefault(r => r.Id == rentalId);
+            if (rental == null || rental.EndTime != null)
+            {
+                Console.WriteLine("Invalid or already completed rental.");
+                return;
+            }
+
+            Console.WriteLine("Enter distance traveled (km):");
+            var distanceKm = decimal.Parse(Console.ReadLine());
+
+            rental.EndTime = DateTime.Now;
+            rental.DistanceKm = distanceKm;
+
+            var hours = (decimal)(rental.EndTime - rental.StartTime).Value.TotalHours;
+            rental.TotalCost = (hours * rental.TeslaCar.HourlyRate) + (distanceKm * rental.TeslaCar.PerKmRate);
+
+            db.SaveChanges();
+
+            Console.WriteLine($"Rental completed. Total cost: {rental.TotalCost} EUR");
+        }
+    }
+}
